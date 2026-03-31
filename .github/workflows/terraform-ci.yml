@@ -9,6 +9,9 @@ permissions:
   contents: read
   security-events: write # for Checkov SARIF upload to GitHub Security tab
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
 
   # ── 1. Formatting ────────────────────────────────────────────────────────────
