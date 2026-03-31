@@ -1,0 +1,90 @@
+name: Terraform CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write # for Checkov SARIF upload to GitHub Security tab
+
+jobs:
+
+  # ── 1. Formatting ────────────────────────────────────────────────────────────
+  # Fails if any .tf file is not canonical terraform fmt output.
+  fmt:
+    name: Format check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.5"
+      - name: Check formatting
+        run: terraform fmt -check -recursive
+
+  # ── 2. Linting ───────────────────────────────────────────────────────────────
+  # tflint catches issues terraform validate misses: deprecated arguments,
+  # invalid instance types, unused variables, naming conventions.
+  tflint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+      - name: Init tflint plugins
+        run: tflint --init
+        env:
+          GITHUB_TOKEN: ${{ github.token }} # avoids rate-limiting on plugin download
+      - name: Run tflint
+        run: tflint --recursive
+
+  # ── 3. Validation ────────────────────────────────────────────────────────────
+  # Runs terraform validate per environment. Uses -backend=false so no AWS
+  # credentials or real state backend are needed.
+  validate:
+    name: Validate (${{ matrix.environment }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [dev, preprod, prod]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.5"
+      - name: Init
+        working-directory: environments/${{ matrix.environment }}
+        run: terraform init -backend=false
+      - name: Validate
+        working-directory: environments/${{ matrix.environment }}
+        run: terraform validate
+
+  # ── 4. Security scanning ─────────────────────────────────────────────────────
+  # Checkov scans all Terraform against CIS, NIST, and other benchmarks.
+  # Results upload to the GitHub Security tab as code scanning alerts.
+  # soft_fail: true on first adoption — review findings and suppress false
+  # positives before flipping this to false to make it a hard gate.
+  checkov:
+    name: Security scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Checkov
+        id: checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          framework: terraform
+          output_format: cli,sarif
+          output_file_path: console,checkov.sarif
+          soft_fail: true
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: checkov.sarif

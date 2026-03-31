@@ -1,0 +1,18 @@
+# Terraform state — never commit
+*.tfstate
+*.tfstate.backup
+*.tfstate.*.backup
+
+# Terraform working directories — binaries only, not the lock file
+.terraform/
+
+# Variable files may contain secrets
+*.tfvars
+*.tfvars.json
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Checkov output
+*.sarif
